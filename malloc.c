@@ -87,3 +87,46 @@ void * malloc(size_t size){
 }
   return block+1;
 }
+
+
+struct block_meta *get_block_ptr(void *ptr) {
+  return (struct block_meta*)ptr - 1;
+}
+
+void free(void *ptr) {
+  if (!ptr) {
+    return;
+  }
+
+  // TODO: consider merging blocks once splitting blocks is implemented.
+  struct block_meta* block_ptr = get_block_ptr(ptr);
+  assert(block_ptr->free == 0);
+  assert(block_ptr->magic == 0x12345678);
+  block_ptr->free = 1;
+  block_ptr->magic = 0x55555555;
+}
+
+void *realloc(void *ptr,size_t size) {
+  if(!ptr){
+    return malloc(size);
+  }
+  struct block_meta *block=get_block_ptr(ptr);
+  if(block->size>=size){
+    return ptr;
+  }
+  void * newptr=malloc(size);
+  if(!newptr){
+    return NULL;   // TODO: set errno on failure.
+  }
+  memcpy(newptr,ptr,block->size);
+  free(ptr);
+  return newptr;  
+}
+
+void *calloc(size_t nelem, size_t elsize) {
+  size_t size = nelem * elsize; // TODO: check for overflow.
+  void *ptr = malloc(size);
+  memset(ptr, 0, size);
+  return ptr;
+}
+
