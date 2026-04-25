@@ -4,17 +4,6 @@
 #include <unistd.h>
 
 
-void *malloc(size_t size) {
-  void *p = sbrk(0);
-  void *request = sbrk(size);
-  if (request == (void*) -1) {
-    return NULL; // sbrk failed.
-  } else {
-    assert(p == request); // Not thread safe.
-    return p;
-  }
-}
-
 
 struct block_meta {
   size_t size;
@@ -24,17 +13,35 @@ struct block_meta {
 };
 
 
+size_t align_size(size_t size) {
+  size_t remainder = size % 8;
+  if (remainder != 0) {
+    size = size + (8 - remainder);
+  }
+  return size;
+}
 #define META_SIZE sizeof(struct block_meta)
 
 void *global_base = NULL;
 
 // Iterate through blocks until we find one that's large enough.
-// TODO: split block up if it's larger than necessary
 struct block_meta *find_free_block(struct block_meta **last, size_t size) {
   struct block_meta *current = global_base;
   while (current && !(current->free && current->size >= size)) {
     *last = current;
     current = current->next;
+  }
+  if(current && current->size > size){                                        // splitting the block so so internal fragmentation will not occur.
+    if(current->size >= size+ META_SIZE +8){
+      struct block_meta *split;
+      split=(struct block_meta*)((char *)current + size + META_SIZE);
+      split->size =current->size - size - META_SIZE;
+      split->free=1;
+      split->magic=0x12345678;
+      split->next=current->next;
+      current->size=size;
+      current->next=split;
+    }
   }
   return current;
 }
@@ -63,6 +70,7 @@ void * malloc(size_t size){
   if(size<=0){
     return NULL;
   }
+  size = align_size(size);
   if(!global_base){
     block=request_space(NULL,size);
     if(block){
@@ -97,13 +105,14 @@ void free(void *ptr) {
   if (!ptr) {
     return;
   }
-
-  // TODO: consider merging blocks once splitting blocks is implemented.
-  struct block_meta* block_ptr = get_block_ptr(ptr);
+  struct block_meta* block_ptr = get_block_ptr(ptr);             
   assert(block_ptr->free == 0);
-  assert(block_ptr->magic == 0x12345678);
-  block_ptr->free = 1;
+  block_ptr->free = 1;                                         
   block_ptr->magic = 0x55555555;
+  while(block_ptr->next && block_ptr->next->free){            // Implemented Coalescing of free blocks
+    block_ptr->size+=block_ptr->next->size+META_SIZE;
+    block_ptr->next=block_ptr->next->next;
+  }
 }
 
 void *realloc(void *ptr,size_t size) {
