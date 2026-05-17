@@ -12,6 +12,7 @@ struct block_meta {
 };
 
 
+
 size_t align_size(size_t size) {
   size_t remainder = size % 8;
   if (remainder != 0) {
